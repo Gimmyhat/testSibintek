@@ -2,14 +2,17 @@ from typing import List, Optional
 from ..models.student import Student
 from ..database.db_manager import DatabaseManager
 import sqlite3
+from ..utils.logger import Logger
 
 class StudentController:
     def __init__(self):
         self.db = DatabaseManager()
+        self.logger = Logger()
     
     def add_student(self, student: Student) -> tuple[bool, str]:
         is_valid, error = student.validate()
         if not is_valid:
+            self.logger.error(f"Ошибка валидации при добавлении студента: {error}")
             return False, error
             
         try:
@@ -31,10 +34,13 @@ class StudentController:
                             VALUES (?, ?)
                         ''', (student_id, teacher_id))
                         
+                self.logger.info(f"Добавлен новый студент: {student.full_name}")
                 return True, "Студент успешно добавлен"
         except sqlite3.IntegrityError:
+            self.logger.error(f"Попытка добавить дубликат студента: {student.full_name}")
             return False, "Студент с такими ФИО уже существует"
         except Exception as e:
+            self.logger.error(f"Ошибка при добавлении студента {student.full_name}: {str(e)}")
             return False, f"Ошибка при добавлении студента: {str(e)}"
     
     def get_all_students(self) -> List[Student]:
@@ -67,13 +73,22 @@ class StudentController:
         try:
             with sqlite3.connect(self.db.db_name) as conn:
                 cursor = conn.cursor()
-                # Сначала удаляем связи с преподавателями
+                # Получаем данные студента перед удалением
+                cursor.execute('SELECT last_name, first_name FROM students WHERE id = ?', 
+                             (student_id,))
+                student_data = cursor.fetchone()
+                
+                # Удаляем связи с преподавателями
                 cursor.execute('DELETE FROM student_teachers WHERE student_id = ?', 
                              (student_id,))
-                # Затем удаляем самого студента
+                # Удаляем самого студента
                 cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
+                
+                if student_data:
+                    self.logger.info(f"Удален студент: {student_data[0]} {student_data[1]}")
                 return True, "Студент успешно удален"
         except Exception as e:
+            self.logger.error(f"Ошибка при удалении студента {student_id}: {str(e)}")
             return False, f"Ошибка при удалении студента: {str(e)}"
     
     def update_student(self, student: Student) -> tuple[bool, str]:

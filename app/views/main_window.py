@@ -4,12 +4,15 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import Qt
 from ..controllers.student_controller import StudentController
 from .student_dialog import StudentDialog
+from ..utils.logger import Logger
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.student_controller = StudentController()
+        self.logger = Logger()
         self.init_ui()
+        self.logger.info("Приложение запущено")
 
     def init_ui(self):
         self.setWindowTitle('Менеджер студентов')
@@ -107,48 +110,61 @@ class MainWindow(QMainWindow):
 
     def add_student(self):
         """Добавление нового студента"""
+        self.logger.info("Открыта форма добавления студента")
         dialog = StudentDialog(self)
         if dialog.exec_():
             self.load_students()
+            self.logger.info("Форма добавления студента закрыта")
 
     def edit_student(self):
         """Редактирование выбранного студента"""
         current_row = self.table.currentRow()
         if current_row < 0:
+            self.logger.warning("Попытка редактирования без выбора студента")
             QMessageBox.warning(self, 'Предупреждение', 
                               'Пожалуйста, выберите студента для редактирования')
             return
             
         student_id = int(self.table.item(current_row, 0).text())
+        self.logger.info(f"Открыта форма редактирования студента (ID: {student_id})")
         dialog = StudentDialog(self, student_id)
         if dialog.exec_():
             self.load_students()
+            self.logger.info(f"Завершено редактирование студента (ID: {student_id})")
 
     def delete_student(self):
         """Удаление выбранного студента"""
         current_row = self.table.currentRow()
         if current_row < 0:
+            self.logger.warning("Попытка удаления без выбора студента")
             QMessageBox.warning(self, 'Предупреждение', 
                               'Пожалуйста, выберите студента для удаления')
             return
             
         student_id = int(self.table.item(current_row, 0).text())
+        student_name = self.table.item(current_row, 1).text()
+        
         reply = QMessageBox.question(self, 'Подтверждение', 
                                    'Вы уверены, что хотите удалить этого студента?',
                                    QMessageBox.Yes | QMessageBox.No, 
                                    QMessageBox.No)
         
         if reply == QMessageBox.Yes:
+            self.logger.info(f"Попытка удаления студента: {student_name} (ID: {student_id})")
             success, message = self.student_controller.delete_student(student_id)
             if success:
                 self.load_students()
             else:
+                self.logger.error(f"Ошибка при удалении студента: {message}")
                 QMessageBox.critical(self, 'Ошибка', 
-                                   f'Не удалось удалить студента: {message}') 
+                                   f'Не удалось удалить студента: {message}')
 
     def on_table_double_click(self, index):
         """Обработка двойного клика по таблице"""
         student_id = int(self.table.item(index.row(), 0).text())
+        student_name = self.table.item(index.row(), 1).text()
+        self.logger.info(f"Открыта форма редактирования студента по двойному клику: {student_name} (ID: {student_id})")
         dialog = StudentDialog(self, student_id)
         if dialog.exec_():
             self.load_students()
+            self.logger.info(f"Завершено редактирование студента: {student_name} (ID: {student_id})")
