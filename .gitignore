@@ -45,6 +45,11 @@ test_*.db
 *.log
 logs/
 
+# PyInstaller
+build/
+dist/
+*.spec
+
 # Unit test / coverage reports
 htmlcov/
 .tox/
@@ -68,4 +73,7 @@ Thumbs.db
 
 # Project specific
 git_alex*
-*.pub 
+*.pub
+run.bat
+run.sh
+docker-compose.yml

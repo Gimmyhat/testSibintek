@@ -23,27 +23,35 @@ class Student:
         return f"{self.last_name} {self.first_name} {self.middle_name or ''}"
     
     def validate(self) -> tuple[bool, str]:
-        # Проверка длины полей
+        # Проверка обязательных полей
+        if not self.gender:
+            return False, "Поле 'Пол' обязательно для заполнения"
+        if self.gender not in ['Мужской', 'Женский']:
+            return False, "Некорректное значение поля 'Пол'"
+            
+        if not self.last_name or not self.last_name.strip():
+            return False, "Поле 'Фамилия' обязательно для заполнения"
         if len(self.last_name) > 40:
             return False, "Фамилия не может быть длиннее 40 символов"
+            
+        if not self.first_name or not self.first_name.strip():
+            return False, "Поле 'Имя' обязательно для заполнения"
         if len(self.first_name) > 40:
             return False, "Имя не может быть длиннее 40 символов"
+            
         if self.middle_name and len(self.middle_name) > 60:
             return False, "Отчество не может быть длиннее 60 символов"
             
-        # Проверка обязательных полей
-        if not self.gender:
-            return False, "Пол обязателен для заполнения"
         if not self.department_id:
             return False, "Необходимо выбрать кафедру"
             
-        # Валидация email
+        # Проверка email если он указан
         if self.email:
             email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
             if not re.match(email_pattern, self.email):
                 return False, "Некорректный формат email"
                 
-        # Валидация телефона
+        # Проверка телефона если он указан
         if self.phone:
             phone_pattern = r'^\+?[1-9]\d{10,11}$'
             if not re.match(phone_pattern, self.phone):
