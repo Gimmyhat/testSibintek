@@ -1,7 +1,8 @@
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QTableWidget, QPushButton, QTableWidgetItem, QHeaderView,
-                            QMessageBox, QLineEdit, QLabel, QComboBox, QDialog)
-from PyQt5.QtCore import Qt, pyqtSignal
+                            QMessageBox, QLineEdit, QLabel, QComboBox, QDialog, QApplication)
+from PyQt5.QtCore import Qt, pyqtSignal, QRect
+from PyQt5.QtGui import QScreen
 from ..controllers.student_controller import StudentController
 from .student_dialog import StudentDialog
 from ..utils.logger import Logger
@@ -45,7 +46,23 @@ class MainWindow(QMainWindow):
         self.student_controller = StudentController()
         self.logger = Logger()
         self.init_ui()
+        self.center_on_screen()  # Добавляем центрирование
         self.logger.info("Приложение запущено")
+
+    def center_on_screen(self):
+        """Центрирование окна на экране"""
+        # Получаем геометрию экрана
+        screen = QScreen.availableGeometry(QApplication.primaryScreen())
+        
+        # Получаем размеры окна
+        window_size = self.geometry()
+        
+        # Вычисляем центральную позицию
+        x = (screen.width() - window_size.width()) // 2
+        y = (screen.height() - window_size.height()) // 2
+        
+        # Перемещаем окно
+        self.move(x, y)
 
     def init_ui(self):
         self.setWindowTitle('Менеджер студентов')
