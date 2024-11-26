@@ -83,3 +83,7 @@ def downgrade(cursor):
                         'INSERT INTO migrations (name) VALUES (?)',
                         (name,)
                     ) 
+
+if __name__ == '__main__':
+    manager = MigrationManager()
+    manager.apply_migrations() 

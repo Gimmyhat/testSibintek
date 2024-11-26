@@ -1,11 +1,12 @@
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QTableWidget, QPushButton, QTableWidgetItem, QHeaderView,
                             QMessageBox, QLineEdit, QLabel, QComboBox, QDialog)
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from ..controllers.student_controller import StudentController
 from .student_dialog import StudentDialog
 from ..utils.logger import Logger
 from .backup_dialog import BackupDialog
+from .restore_dialog import RestoreDialog
 
 class StatisticsDialog(QDialog):
     def __init__(self, controller, parent=None):
@@ -37,6 +38,8 @@ class StatisticsDialog(QDialog):
         layout.addWidget(close_button)
 
 class MainWindow(QMainWindow):
+    restart_signal = pyqtSignal()  # Сигнал для перезапуска
+
     def __init__(self):
         super().__init__()
         self.student_controller = StudentController()
@@ -75,19 +78,22 @@ class MainWindow(QMainWindow):
         edit_button = QPushButton('Редактировать')
         delete_button = QPushButton('Удалить')
         stats_button = QPushButton('Статистика')
-        backup_button = QPushButton('Резервная копия')
+        backup_button = QPushButton('Создать резервную копию')
+        restore_button = QPushButton('Восстановить из копии')
         
         add_button.clicked.connect(self.add_student)
         edit_button.clicked.connect(self.edit_student)
         delete_button.clicked.connect(self.delete_student)
         stats_button.clicked.connect(self.show_statistics)
         backup_button.clicked.connect(self.show_backup_dialog)
+        restore_button.clicked.connect(self.show_restore_dialog)
         
         button_layout.addWidget(add_button)
         button_layout.addWidget(edit_button)
         button_layout.addWidget(delete_button)
         button_layout.addWidget(stats_button)
         button_layout.addWidget(backup_button)
+        button_layout.addWidget(restore_button)
         button_layout.addStretch()
         
         main_layout.addLayout(button_layout)
@@ -103,9 +109,6 @@ class MainWindow(QMainWindow):
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
-        
-        # Настройка сортировки
-        self.table.setSortingEnabled(True)
         
         # Настройка заголовков
         header = self.table.horizontalHeader()
@@ -257,3 +260,25 @@ class MainWindow(QMainWindow):
     def show_backup_dialog(self):
         dialog = BackupDialog(self.student_controller, self)
         dialog.exec_()
+
+    def show_restore_dialog(self):
+        """Показать диалог восстановления из резервной копии"""
+        dialog = RestoreDialog(self.student_controller, self)
+        if dialog.exec_() == QDialog.Accepted:
+            reply = QMessageBox.question(
+                self,
+                'Перезапуск приложения',
+                'Для применения изменений необходимо перезапустить приложение. '
+                'Перезапустить сейчас?',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self.logger.info("Перезапуск приложения после восстановления из резервной копии")
+                self.restart_signal.emit()  # Испускаем сигнал для перезапуска
+            else:
+                QMessageBox.information(
+                    self,
+                    'Информация',
+                    'Изменения вступят в силу после перезапуска приложения'
+                )

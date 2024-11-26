@@ -11,38 +11,65 @@ class StudentController:
         self.db = DatabaseManager()
         self.logger = Logger()
     
-    def add_student(self, student: Student) -> tuple[bool, str]:
-        is_valid, error = student.validate()
-        if not is_valid:
-            self.logger.error(f"Ошибка валидации при добавлении студента: {error}")
-            return False, error
-            
+    def _execute_query(self, query: str, params: tuple = None) -> tuple[bool, str, any]:
+        """Выполнение SQL запроса с обработкой ошибок"""
         try:
             with sqlite3.connect(self.db.db_name) as conn:
                 cursor = conn.cursor()
+                if params:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
+                result = cursor.fetchall() if 'SELECT' in query.upper() else None
+                return True, "", result
+        except sqlite3.IntegrityError as e:
+            error_msg = str(e)
+            self.logger.error(f"Ошибка целостности данных: {error_msg}")
+            return False, "Нарушение уникальности данных", None
+        except sqlite3.OperationalError as e:
+            error_msg = str(e)
+            if "RAISE(ABORT" in error_msg:
+                # Извлекаем сообщение об ошибке из триггера
+                error_msg = error_msg.split('RAISE(ABORT,')[-1].strip("')")
+            self.logger.error(f"Ошибка валидации: {error_msg}")
+            return False, error_msg, None
+        except Exception as e:
+            self.logger.error(f"Ошибка базы данных: {str(e)}")
+            return False, f"Ошибка базы данных: {str(e)}", None
+    
+    def add_student(self, student: Student) -> tuple[bool, str]:
+        try:
+            with sqlite3.connect(self.db.db_name) as conn:
+                cursor = conn.cursor()
+                
+                # Добавляем студента
                 cursor.execute('''
                     INSERT INTO students 
-                    (gender, last_name, first_name, middle_name, department_id, photo_path)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (gender, last_name, first_name, middle_name, department_id, 
+                     photo_path, email, phone)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (student.gender, student.last_name, student.first_name, 
-                      student.middle_name, student.department_id, student.photo_path))
+                      student.middle_name, student.department_id, student.photo_path,
+                      student.email, student.phone))
                 
                 student_id = cursor.lastrowid
                 
+                # Добавляем связи с преподавателями
                 if student.teachers:
                     for teacher_id in student.teachers:
                         cursor.execute('''
                             INSERT INTO student_teachers (student_id, teacher_id)
                             VALUES (?, ?)
                         ''', (student_id, teacher_id))
-                        
+                
                 self.logger.info(f"Добавлен новый студент: {student.full_name}")
                 return True, "Студент успешно добавлен"
-        except sqlite3.IntegrityError:
-            self.logger.error(f"Попытка добавить дубликат студента: {student.full_name}")
-            return False, "Студент с такими ФИО уже существует"
+                
+        except sqlite3.IntegrityError as e:
+            self.logger.error(f"Ошибка целостности данных: {str(e)}")
+            return False, "Нарушение уникальности данных"
         except Exception as e:
-            self.logger.error(f"Ошибка при добавлении студента {student.full_name}: {str(e)}")
+            self.logger.error(f"Ошибка при добавлении студента: {str(e)}")
             return False, f"Ошибка при добавлении студента: {str(e)}"
     
     def get_all_students(self) -> List[Student]:
@@ -104,60 +131,43 @@ class StudentController:
             return False, f"Ошибка при удалении студента: {str(e)}"
     
     def update_student(self, student: Student) -> tuple[bool, str]:
-        is_valid, error = student.validate()
-        if not is_valid:
-            return False, error
-        
         try:
-            with sqlite3.connect(self.db.db_name) as conn:
-                cursor = conn.cursor()
-                
-                # Получаем старые данные для истории изменений
-                cursor.execute('''
-                    SELECT gender, last_name, first_name, middle_name, 
-                           department_id, photo_path
-                    FROM students WHERE id = ?
-                ''', (student.id,))
-                old_data = cursor.fetchone()
-                
-                cursor.execute('''
-                    UPDATE students 
-                    SET gender = ?, 
-                        last_name = ?, 
-                        first_name = ?, 
-                        middle_name = ?, 
-                        department_id = ?, 
-                        photo_path = ?
-                    WHERE id = ?
-                ''', (student.gender, student.last_name, student.first_name,
-                      student.middle_name, student.department_id, student.photo_path,
-                      student.id))
-                
-                # Логируем изменения
-                if old_data:
-                    fields = ['gender', 'last_name', 'first_name', 'middle_name', 
-                             'department_id', 'photo_path']
-                    new_data = [student.gender, student.last_name, student.first_name,
-                               student.middle_name, student.department_id, student.photo_path]
-                    
-                    for i, (old_val, new_val) in enumerate(zip(old_data, new_data)):
-                        if old_val != new_val:
-                            self.log_change(student.id, fields[i], str(old_val), str(new_val))
-                
-                # Обновляем связи с преподавателями
-                cursor.execute('DELETE FROM student_teachers WHERE student_id = ?', 
-                             (student.id,))
-                if student.teachers:
-                    for teacher_id in student.teachers:
-                        cursor.execute('''
-                            INSERT INTO student_teachers (student_id, teacher_id)
-                            VALUES (?, ?)
-                        ''', (student.id, teacher_id))
-                
-                return True, "Данные студента успешно обновлены"
-        except sqlite3.IntegrityError:
-            return False, "Студент с такими ФИО уже существует"
+            success, error, _ = self._execute_query('''
+                UPDATE students 
+                SET gender = ?, 
+                    last_name = ?, 
+                    first_name = ?, 
+                    middle_name = ?, 
+                    department_id = ?, 
+                    photo_path = ?,
+                    email = ?,
+                    phone = ?
+                WHERE id = ?
+            ''', (student.gender, student.last_name, student.first_name,
+                  student.middle_name, student.department_id, student.photo_path,
+                  student.email, student.phone, student.id))
+            
+            if not success:
+                return False, error
+            
+            # Обновляем связи с преподавателями
+            self._execute_query(
+                'DELETE FROM student_teachers WHERE student_id = ?', 
+                (student.id,)
+            )
+            
+            if student.teachers:
+                for teacher_id in student.teachers:
+                    self._execute_query('''
+                        INSERT INTO student_teachers (student_id, teacher_id)
+                        VALUES (?, ?)
+                    ''', (student.id, teacher_id))
+            
+            self.logger.info(f"Обновлены данные студента: {student.full_name}")
+            return True, "Данные студента успешно обновлены"
+            
         except Exception as e:
+            self.logger.error(f"Ошибка при обновлении данных студента: {str(e)}")
             return False, f"Ошибка при обновлении данных студента: {str(e)}"
     
     def get_departments(self) -> List[dict]:
@@ -235,7 +245,7 @@ class StudentController:
             self.logger.error(f"Ошибка при логировании изменений: {str(e)}")
     
     def get_student_history(self, student_id: int) -> List[dict]:
-        """Получение истории изменений студента"""
+        """Получение и��тории изменений студента"""
         try:
             with sqlite3.connect(self.db.db_name) as conn:
                 cursor = conn.cursor()
