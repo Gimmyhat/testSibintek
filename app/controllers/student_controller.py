@@ -3,6 +3,8 @@ from ..models.student import Student
 from ..database.db_manager import DatabaseManager
 import sqlite3
 from ..utils.logger import Logger
+import os
+from datetime import datetime
 
 class StudentController:
     def __init__(self):
@@ -20,10 +22,10 @@ class StudentController:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO students 
-                    (gender, last_name, first_name, middle_name, department_id)
-                    VALUES (?, ?, ?, ?, ?)
+                    (gender, last_name, first_name, middle_name, department_id, photo_path)
+                    VALUES (?, ?, ?, ?, ?, ?)
                 ''', (student.gender, student.last_name, student.first_name, 
-                      student.middle_name, student.department_id))
+                      student.middle_name, student.department_id, student.photo_path))
                 
                 student_id = cursor.lastrowid
                 
@@ -47,7 +49,16 @@ class StudentController:
         with sqlite3.connect(self.db.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT s.*, d.name as department_name, GROUP_CONCAT(st.teacher_id)
+                SELECT 
+                    s.id,
+                    s.gender,
+                    s.last_name,
+                    s.first_name,
+                    s.middle_name,
+                    s.department_id,
+                    s.photo_path,
+                    d.name as department_name,
+                    GROUP_CONCAT(st.teacher_id) as teacher_ids
                 FROM students s
                 LEFT JOIN departments d ON s.department_id = d.id
                 LEFT JOIN student_teachers st ON s.id = st.student_id
@@ -56,7 +67,7 @@ class StudentController:
             
             students = []
             for row in cursor.fetchall():
-                teachers = [int(t) for t in row[7].split(',')] if row[7] else []
+                teachers = [int(t) for t in row[8].split(',')] if row[8] else []
                 students.append(Student(
                     id=row[0],
                     gender=row[1],
@@ -64,7 +75,8 @@ class StudentController:
                     first_name=row[3],
                     middle_name=row[4],
                     department_id=row[5],
-                    department_name=row[6],
+                    photo_path=row[6],
+                    department_name=row[7],
                     teachers=teachers
                 ))
             return students 
@@ -99,13 +111,38 @@ class StudentController:
         try:
             with sqlite3.connect(self.db.db_name) as conn:
                 cursor = conn.cursor()
+                
+                # Получаем старые данные для истории изменений
+                cursor.execute('''
+                    SELECT gender, last_name, first_name, middle_name, 
+                           department_id, photo_path
+                    FROM students WHERE id = ?
+                ''', (student.id,))
+                old_data = cursor.fetchone()
+                
                 cursor.execute('''
                     UPDATE students 
-                    SET gender = ?, last_name = ?, first_name = ?, 
-                        middle_name = ?, department_id = ?
+                    SET gender = ?, 
+                        last_name = ?, 
+                        first_name = ?, 
+                        middle_name = ?, 
+                        department_id = ?, 
+                        photo_path = ?
                     WHERE id = ?
                 ''', (student.gender, student.last_name, student.first_name,
-                      student.middle_name, student.department_id, student.id))
+                      student.middle_name, student.department_id, student.photo_path,
+                      student.id))
+                
+                # Логируем изменения
+                if old_data:
+                    fields = ['gender', 'last_name', 'first_name', 'middle_name', 
+                             'department_id', 'photo_path']
+                    new_data = [student.gender, student.last_name, student.first_name,
+                               student.middle_name, student.department_id, student.photo_path]
+                    
+                    for i, (old_val, new_val) in enumerate(zip(old_data, new_data)):
+                        if old_val != new_val:
+                            self.log_change(student.id, fields[i], str(old_val), str(new_val))
                 
                 # Обновляем связи с преподавателями
                 cursor.execute('DELETE FROM student_teachers WHERE student_id = ?', 
@@ -151,3 +188,94 @@ class StudentController:
             ''', teacher_ids)
             
             return [f"{row[0]} {row[1]}" for row in cursor.fetchall()]
+    
+    def get_statistics(self) -> dict:
+        """Получение статистики по студентам"""
+        try:
+            with sqlite3.connect(self.db.db_name) as conn:
+                cursor = conn.cursor()
+                
+                # Статистика по кафедрам
+                cursor.execute('''
+                    SELECT d.name, COUNT(s.id)
+                    FROM departments d
+                    LEFT JOIN students s ON d.id = s.department_id
+                    GROUP BY d.name
+                ''')
+                departments_stats = dict(cursor.fetchall())
+                
+                # Статистика по полу
+                cursor.execute('''
+                    SELECT gender, COUNT(id)
+                    FROM students
+                    GROUP BY gender
+                ''')
+                gender_stats = dict(cursor.fetchall())
+                
+                return {
+                    'departments': departments_stats,
+                    'gender': gender_stats
+                }
+        except Exception as e:
+            self.logger.error(f"Ошибка при получении статистики: {str(e)}")
+            return {'departments': {}, 'gender': {}}
+    
+    def log_change(self, student_id: int, field_name: str, old_value: str, new_value: str):
+        """Логирование изменений в данных студента"""
+        try:
+            with sqlite3.connect(self.db.db_name) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO student_history 
+                    (student_id, field_name, old_value, new_value)
+                    VALUES (?, ?, ?, ?)
+                ''', (student_id, field_name, old_value, new_value))
+                self.logger.info(f"Изменение данных студента {student_id}: {field_name}")
+        except Exception as e:
+            self.logger.error(f"Ошибка при логировании изменений: {str(e)}")
+    
+    def get_student_history(self, student_id: int) -> List[dict]:
+        """Получение истории изменений студента"""
+        try:
+            with sqlite3.connect(self.db.db_name) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT field_name, old_value, new_value, changed_at
+                    FROM student_history
+                    WHERE student_id = ?
+                    ORDER BY changed_at DESC
+                ''', (student_id,))
+                
+                history = []
+                for row in cursor.fetchall():
+                    history.append({
+                        'field': row[0],
+                        'old_value': row[1],
+                        'new_value': row[2],
+                        'date': row[3]
+                    })
+                return history
+        except Exception as e:
+            self.logger.error(f"Ошибка при получении истории: {str(e)}")
+            return []
+    
+    def backup_database(self):
+        """Создание резервной копии базы данных"""
+        try:
+            backup_dir = 'backups'
+            if not os.path.exists(backup_dir):
+                os.makedirs(backup_dir)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_path = os.path.join(backup_dir, f'backup_{timestamp}.db')
+            
+            with sqlite3.connect(self.db.db_name) as conn:
+                backup = sqlite3.connect(backup_path)
+                conn.backup(backup)
+                backup.close()
+            
+            self.logger.info(f"Создана резервная копия базы данных: {backup_path}")
+            return True, "Резервная копия создана успешно"
+        except Exception as e:
+            self.logger.error(f"Ошибка при создании резервной копии: {str(e)}")
+            return False, str(e)

@@ -29,7 +29,7 @@ class DatabaseManager:
                 )
             ''')
             
-            # Создание таблицы студентов
+            # Создание таблицы студентов с новыми полями
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS students (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,6 +38,10 @@ class DatabaseManager:
                     first_name TEXT NOT NULL,
                     middle_name TEXT,
                     department_id INTEGER,
+                    photo_path TEXT,
+                    email TEXT,
+                    phone TEXT,
+                    modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (department_id) REFERENCES departments (id),
                     UNIQUE(last_name, first_name, middle_name)
                 )
@@ -52,7 +56,30 @@ class DatabaseManager:
                     FOREIGN KEY (teacher_id) REFERENCES teachers (id),
                     PRIMARY KEY (student_id, teacher_id)
                 )
-            ''') 
+            ''')
+            
+            # Создание таблицы истории изменений
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS student_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_id INTEGER,
+                    field_name TEXT NOT NULL,
+                    old_value TEXT,
+                    new_value TEXT,
+                    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (student_id) REFERENCES students (id)
+                )
+            ''')
+            
+            # Добавляем новые колонки в существующую таблицу students
+            try:
+                cursor.execute('ALTER TABLE students ADD COLUMN photo_path TEXT')
+                cursor.execute('ALTER TABLE students ADD COLUMN email TEXT')
+                cursor.execute('ALTER TABLE students ADD COLUMN phone TEXT')
+                cursor.execute('ALTER TABLE students ADD COLUMN modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
+            except sqlite3.OperationalError:
+                # Колонки уже существуют
+                pass
 
     def populate_initial_data(self):
         departments = [

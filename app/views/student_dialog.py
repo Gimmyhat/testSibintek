@@ -3,12 +3,15 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                             QListWidget, QListWidgetItem)
 from PyQt5.QtCore import Qt
 from ..models.student import Student
+from .history_dialog import HistoryDialog
+from .photo_dialog import PhotoDialog
 
 class StudentDialog(QDialog):
     def __init__(self, parent=None, student_id=None):
         super().__init__(parent)
         self.student_controller = parent.student_controller
         self.student_id = student_id
+        self.student = None
         self.init_ui()
         
         if student_id:
@@ -48,12 +51,18 @@ class StudentDialog(QDialog):
         buttons_layout = QHBoxLayout()
         save_button = QPushButton('Сохранить')
         cancel_button = QPushButton('Отмена')
+        history_button = QPushButton('История изменений')
+        photo_button = QPushButton('Фотография')
         
-        save_button.clicked.connect(self.save_student)
+        save_button.clicked.connect(self.save)
         cancel_button.clicked.connect(self.reject)
+        history_button.clicked.connect(self.show_history)
+        photo_button.clicked.connect(self.show_photo)
         
         buttons_layout.addWidget(save_button)
         buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(history_button)
+        buttons_layout.addWidget(photo_button)
         
         layout.addLayout(form_layout)
         layout.addLayout(buttons_layout)
@@ -74,14 +83,16 @@ class StudentDialog(QDialog):
             item.setData(Qt.UserRole, teacher['id'])
             self.teachers_list.addItem(item)
 
-    def save_student(self):
+    def save(self):
+        """Сохранение данных студента"""
         student = Student(
             id=self.student_id,
+            gender=self.gender_combo.currentText(),
             last_name=self.last_name_edit.text(),
             first_name=self.first_name_edit.text(),
             middle_name=self.middle_name_edit.text() or None,
-            gender=self.gender_combo.currentText(),
             department_id=self.department_combo.currentData(),
+            photo_path=self.student.photo_path if self.student else None,
             teachers=[item.data(Qt.UserRole) for item in 
                      self.teachers_list.selectedItems()]
         )
@@ -94,31 +105,57 @@ class StudentDialog(QDialog):
         if success:
             self.accept()
         else:
-            QMessageBox.warning(self, 'Ошибка', message) 
+            QMessageBox.warning(self, 'Ошибка', message)
 
     def load_student_data(self):
         """Загрузка данных студента для редактирования"""
         students = self.student_controller.get_all_students()
-        student = next((s for s in students if s.id == self.student_id), None)
+        self.student = next((s for s in students if s.id == self.student_id), None)
         
-        if student:
-            self.last_name_edit.setText(student.last_name)
-            self.first_name_edit.setText(student.first_name)
-            self.middle_name_edit.setText(student.middle_name or '')
+        if self.student:
+            self.last_name_edit.setText(self.student.last_name)
+            self.first_name_edit.setText(self.student.first_name)
+            self.middle_name_edit.setText(self.student.middle_name or '')
             
             # Устанавливаем пол
-            index = self.gender_combo.findText(student.gender)
+            index = self.gender_combo.findText(self.student.gender)
             if index >= 0:
                 self.gender_combo.setCurrentIndex(index)
             
             # Устанавливаем кафедру
-            index = self.department_combo.findData(student.department_id)
+            index = self.department_combo.findData(self.student.department_id)
             if index >= 0:
                 self.department_combo.setCurrentIndex(index)
             
             # Выбираем преподавателей
-            if student.teachers:
+            if self.student.teachers:
                 for i in range(self.teachers_list.count()):
                     item = self.teachers_list.item(i)
-                    if item.data(Qt.UserRole) in student.teachers:
-                        item.setSelected(True) 
+                    if item.data(Qt.UserRole) in self.student.teachers:
+                        item.setSelected(True)
+
+    def show_history(self):
+        if self.student_id:
+            dialog = HistoryDialog(self.student_controller, self.student_id, self)
+            dialog.exec_()
+
+    def show_photo(self):
+        if not self.student_id:
+            # Если это новый студент, создаем объект Student
+            self.student = Student(
+                id=None,
+                gender=self.gender_combo.currentText(),
+                last_name=self.last_name_edit.text(),
+                first_name=self.first_name_edit.text(),
+                middle_name=self.middle_name_edit.text() or None,
+                department_id=self.department_combo.currentData(),
+                photo_path=None
+            )
+        
+        dialog = PhotoDialog(
+            self.student_id, 
+            self.student.photo_path if self.student else None,
+            self
+        )
+        if dialog.exec_() and dialog.new_photo_path:
+            self.student.photo_path = dialog.new_photo_path

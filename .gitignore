@@ -39,6 +39,7 @@ env/
 *.db
 *.sqlite3
 *.sqlite
+student_manager.db
 
 # Logs
 *.log
